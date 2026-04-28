@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Task } from "@/types";
 import VoiceRecorder from "./VoiceRecorder";
 import { v4 as uuidv4 } from "uuid";
@@ -12,12 +12,16 @@ interface Props {
 export default function TaskInput({ onAdd }: Props) {
   const [text, setText] = useState("");
   const [processing, setProcessing] = useState(false);
+  const textRef = useRef("");
+  const submitRef = useRef<(input: string) => void>(() => {});
 
   const submit = async (input: string) => {
     const trimmed = input.trim();
     if (!trimmed) return;
 
     setProcessing(true);
+    textRef.current = "";
+    setText("");
     try {
       const res = await fetch("/api/ai/process", {
         method: "POST",
@@ -36,7 +40,6 @@ export default function TaskInput({ onAdd }: Props) {
       );
       if (newTasks.length > 0) {
         onAdd(newTasks);
-        setText("");
       }
     } catch {
       const fallback: Task = {
@@ -47,17 +50,37 @@ export default function TaskInput({ onAdd }: Props) {
         createdAt: new Date().toISOString(),
       };
       onAdd([fallback]);
-      setText("");
     } finally {
       setProcessing(false);
     }
   };
 
+  submitRef.current = submit;
+
+  const handleTranscript = useCallback((t: string) => {
+    const next = textRef.current ? textRef.current + " " + t : t;
+    textRef.current = next;
+    setText(next);
+  }, []);
+
+  const handleVoiceEnd = useCallback(() => {
+    const current = textRef.current;
+    if (current.trim()) {
+      submitRef.current(current);
+    }
+  }, []);
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      textRef.current = text;
       submit(text);
     }
+  };
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    textRef.current = e.target.value;
+    setText(e.target.value);
   };
 
   return (
@@ -68,7 +91,7 @@ export default function TaskInput({ onAdd }: Props) {
       <div className="flex items-end gap-2">
         <textarea
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={handleTextChange}
           onKeyDown={handleKeyDown}
           placeholder="タスクを入力（Enter で追加）&#10;音声入力も可能です"
           rows={2}
@@ -77,11 +100,12 @@ export default function TaskInput({ onAdd }: Props) {
         />
         <div className="flex flex-col gap-2">
           <VoiceRecorder
-            onTranscript={(t) => setText((prev) => (prev ? prev + " " + t : t))}
+            onTranscript={handleTranscript}
+            onEnd={handleVoiceEnd}
             disabled={processing}
           />
           <button
-            onClick={() => submit(text)}
+            onClick={() => { textRef.current = text; submit(text); }}
             disabled={processing || !text.trim()}
             className="flex items-center justify-center w-10 h-10 rounded-xl bg-indigo-500 text-white hover:bg-indigo-600 disabled:opacity-40 transition-all"
             title="追加"
