@@ -12,13 +12,19 @@ import { useEffect, useRef, useState } from "react";
 
 interface Props {
   onTranscript: (text: string) => void;
+  onEnd?: () => void;
   disabled?: boolean;
 }
 
-export default function VoiceRecorder({ onTranscript, disabled }: Props) {
+export default function VoiceRecorder({ onTranscript, onEnd, disabled }: Props) {
   const [listening, setListening] = useState(false);
   const [supported, setSupported] = useState(true);
   const recognitionRef = useRef<any | null>(null);
+  const onTranscriptRef = useRef(onTranscript);
+  const onEndRef = useRef(onEnd);
+
+  useEffect(() => { onTranscriptRef.current = onTranscript; }, [onTranscript]);
+  useEffect(() => { onEndRef.current = onEnd; }, [onEnd]);
 
   useEffect(() => {
     const SpeechRecognitionAPI =
@@ -30,21 +36,24 @@ export default function VoiceRecorder({ onTranscript, disabled }: Props) {
 
     const rec = new SpeechRecognitionAPI();
     rec.lang = "ja-JP";
-    rec.continuous = true;
+    rec.continuous = false;
     rec.interimResults = false;
 
     rec.onresult = (event: any) => {
       const transcript = Array.from(event.results as any[])
         .map((r: any) => r[0].transcript)
         .join("");
-      onTranscript(transcript);
+      onTranscriptRef.current(transcript);
     };
 
-    rec.onend = () => setListening(false);
+    rec.onend = () => {
+      setListening(false);
+      onEndRef.current?.();
+    };
     rec.onerror = () => setListening(false);
 
     recognitionRef.current = rec;
-  }, [onTranscript]);
+  }, []);
 
   const toggle = () => {
     if (!recognitionRef.current) return;
